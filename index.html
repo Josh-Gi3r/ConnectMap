@@ -1,0 +1,1466 @@
+        function toggleConnectionMode() {
+            if (currentMode === 'connection') {
+                closeConnectionMode();
+            } else {
+                currentMode = 'connection';
+                selectedPeople = [];
+                updateConnectionModeUI();
+                updateActionButtons();
+                clearHighlights();
+            }
+        }    <div class="connection-mode" id="connection-mode">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+            <div class="mode-title">Connection Path Finder</div>
+            <button onclick="closeConnectionMode()" style="background: none; border: none; font-size: 18px; cursor: pointer;">✕</button>
+        </div>
+        <div class="selected-people" id="selected-people"></div>
+        <div class="connection-path" id="connection-path">
+            Click two people to find the connection path between them
+        </div>
+    </div><!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ConnectMap - Interactive Personal Network Maps</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.8.5/d3.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        :root {
+            --primary-bg: #fdfbff;
+            --secondary-bg: #ffffff;
+            --text-primary: #2d3748;
+            --text-secondary: #718096;
+            --border-color: #e2e8f0;
+            --glass-bg: rgba(255, 255, 255, 0.95);
+        }
+
+        [data-theme="dark"] {
+            --primary-bg: #1a202c;
+            --secondary-bg: #2d3748;
+            --text-primary: #f7fafc;
+            --text-secondary: #a0aec0;
+            --border-color: #4a5568;
+            --glass-bg: rgba(45, 55, 72, 0.95);
+        }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            background: linear-gradient(135deg, var(--primary-bg) 0%, #f8f9fa 100%);
+            color: var(--text-primary);
+            overflow: hidden;
+            height: 100vh;
+            transition: all 0.3s ease;
+        }
+
+        .header {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            z-index: 1000;
+            background: var(--glass-bg);
+            backdrop-filter: blur(20px);
+            border-bottom: 1px solid var(--border-color);
+            padding: 15px 30px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .logo {
+            font-size: 24px;
+            font-weight: 700;
+            background: linear-gradient(45deg, #667eea, #764ba2);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .controls {
+            display: flex;
+            gap: 15px;
+            align-items: center;
+        }
+
+        .control-group {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            background: var(--secondary-bg);
+            padding: 8px 15px;
+            border-radius: 20px;
+            border: 1px solid var(--border-color);
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+
+        .control-group label {
+            font-size: 12px;
+            color: var(--text-secondary);
+            text-transform: uppercase;
+            font-weight: 500;
+        }
+
+        select, input[type="range"] {
+            background: transparent;
+            border: none;
+            color: var(--text-primary);
+            font-size: 12px;
+        }
+
+        .control-btn {
+            background: var(--secondary-bg);
+            border: 1px solid var(--border-color);
+            color: var(--text-primary);
+            padding: 8px 16px;
+            border-radius: 20px;
+            cursor: pointer;
+            font-size: 12px;
+            font-weight: 500;
+            transition: all 0.3s ease;
+        }
+
+        .control-btn:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+        }
+
+        .add-person-btn {
+            background: linear-gradient(45deg, #667eea, #764ba2);
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 20px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            font-size: 12px;
+            text-transform: uppercase;
+        }
+
+        .add-person-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 20px rgba(102, 126, 234, 0.3);
+        }
+
+        .network-container {
+            width: 100vw;
+            height: 100vh;
+            position: relative;
+            overflow: hidden;
+        }
+
+        #network-svg {
+            width: 100%;
+            height: 100%;
+            cursor: auto;
+        }
+
+        .degree-circles {
+            fill: none;
+            stroke: rgba(102, 126, 234, 0.1);
+            stroke-width: 1;
+            stroke-dasharray: 5,5;
+        }
+
+        .info-panel {
+            position: fixed;
+            top: 80px;
+            right: 30px;
+            width: 300px;
+            background: var(--glass-bg);
+            backdrop-filter: blur(20px);
+            border: 1px solid var(--border-color);
+            border-radius: 16px;
+            padding: 24px;
+            z-index: 999;
+            transform: translateX(330px);
+            transition: transform 0.3s ease;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+        }
+
+        .info-panel.active {
+            transform: translateX(0);
+        }
+
+        .person-avatar {
+            width: 60px;
+            height: 60px;
+            border-radius: 50%;
+            margin: 0 auto 16px;
+            display: block;
+            border: 2px solid #667eea;
+        }
+
+        .info-title {
+            font-size: 18px;
+            font-weight: 700;
+            margin-bottom: 4px;
+            color: var(--text-primary);
+            text-align: center;
+        }
+
+        .info-subtitle {
+            font-size: 14px;
+            color: var(--text-secondary);
+            text-align: center;
+            margin-bottom: 20px;
+        }
+
+        .info-detail {
+            margin-bottom: 12px;
+            font-size: 14px;
+        }
+
+        .info-label {
+            color: var(--text-secondary);
+            font-size: 11px;
+            text-transform: uppercase;
+            font-weight: 600;
+            margin-bottom: 4px;
+        }
+
+        .stats-overlay {
+            position: fixed;
+            bottom: 30px;
+            left: 30px;
+            background: var(--glass-bg);
+            backdrop-filter: blur(20px);
+            border: 1px solid var(--border-color);
+            border-radius: 16px;
+            padding: 20px;
+            z-index: 999;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+        }
+
+        .stat-item {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 8px;
+            font-size: 14px;
+        }
+
+        .stat-value {
+            color: #667eea;
+            font-weight: 600;
+        }
+
+        .search-container {
+            position: fixed;
+            top: 80px;
+            right: 350px;
+            z-index: 999;
+        }
+
+        .search-box {
+            background: var(--glass-bg);
+            backdrop-filter: blur(20px);
+            border: 1px solid var(--border-color);
+            border-radius: 20px;
+            padding: 12px 20px;
+            font-size: 14px;
+            width: 250px;
+            color: var(--text-primary);
+            outline: none;
+        }
+
+        .search-box:focus {
+            border-color: #667eea;
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+        }
+
+        .connection-mode {
+            position: fixed;
+            bottom: 30px;
+            right: 30px;
+            background: var(--glass-bg);
+            backdrop-filter: blur(20px);
+            border: 1px solid var(--border-color);
+            border-radius: 16px;
+            padding: 20px;
+            z-index: 999;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+            transform: translateY(200px);
+            transition: transform 0.3s ease;
+        }
+
+        .connection-mode.active {
+            transform: translateY(0);
+        }
+
+        .mode-title {
+            font-size: 16px;
+            font-weight: 600;
+            margin-bottom: 12px;
+            color: #667eea;
+        }
+
+        .selected-people {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 12px;
+            flex-wrap: wrap;
+        }
+
+        .selected-person {
+            background: #667eea;
+            color: white;
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: 500;
+        }
+
+        .connection-path {
+            background: rgba(102, 126, 234, 0.1);
+            padding: 12px;
+            border-radius: 8px;
+            font-size: 14px;
+            line-height: 1.4;
+        }
+
+        .path-arrow {
+            color: #667eea;
+            font-weight: bold;
+            margin: 0 4px;
+        }
+
+        .influence-sphere {
+            stroke: #ff6b6b;
+            stroke-width: 2;
+            fill: rgba(255, 107, 107, 0.1);
+            stroke-dasharray: 3,3;
+        }
+
+        .path-highlight {
+            stroke: #ff6b6b !important;
+            stroke-width: 5 !important;
+            stroke-opacity: 1 !important;
+            animation: pathPulse 2s infinite;
+        }
+
+        @keyframes pathPulse {
+            0%, 100% { stroke-opacity: 1; }
+            50% { stroke-opacity: 0.5; }
+        }
+
+        .cluster-group {
+            stroke: #ffd700;
+            stroke-width: 3;
+            fill: rgba(255, 215, 0, 0.1);
+            stroke-dasharray: 5,5;
+        }
+
+        .node.selected {
+            filter: drop-shadow(0 0 20px #ff6b6b) !important;
+        }
+
+        .node.highlighted {
+            filter: drop-shadow(0 0 15px #667eea) !important;
+        }
+
+        .quick-actions {
+            position: fixed;
+            bottom: 200px;
+            left: 30px;
+            background: var(--glass-bg);
+            backdrop-filter: blur(20px);
+            border: 1px solid var(--border-color);
+            border-radius: 16px;
+            padding: 16px;
+            z-index: 999;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+        }
+
+        .layer-legend {
+            position: fixed;
+            top: 80px;
+            left: 30px;
+            background: var(--glass-bg);
+            backdrop-filter: blur(20px);
+            border: 1px solid var(--border-color);
+            border-radius: 16px;
+            padding: 20px;
+            z-index: 999;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+        }
+
+        .action-btn {
+            display: block;
+            width: 100%;
+            background: transparent;
+            border: 1px solid var(--border-color);
+            color: var(--text-primary);
+            padding: 8px 16px;
+            border-radius: 8px;
+            margin-bottom: 8px;
+            cursor: pointer;
+            font-size: 12px;
+            transition: all 0.3s ease;
+        }
+
+        .action-btn:hover {
+            background: #667eea;
+            color: white;
+        }
+
+        .action-btn.active {
+            background: #667eea;
+            color: white;
+        }
+
+        .legend-title {
+            font-size: 14px;
+            font-weight: 600;
+            margin-bottom: 12px;
+            color: var(--text-primary);
+        }
+
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 8px;
+            font-size: 12px;
+        }
+
+        .legend-line {
+            width: 20px;
+            height: 2px;
+            flex-shrink: 0;
+        }
+
+        .demo-notice {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: var(--glass-bg);
+            backdrop-filter: blur(20px);
+            border: 1px solid var(--border-color);
+            border-radius: 16px;
+            padding: 32px;
+            text-align: center;
+            z-index: 2000;
+            max-width: 500px;
+            opacity: 1;
+            transition: opacity 0.5s ease;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+        }
+
+        .demo-notice.hidden {
+            opacity: 0;
+            pointer-events: none;
+        }
+
+        .demo-title {
+            font-size: 20px;
+            font-weight: 700;
+            margin-bottom: 16px;
+            background: linear-gradient(45deg, #667eea, #764ba2);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .demo-text {
+            font-size: 14px;
+            line-height: 1.6;
+            color: var(--text-secondary);
+            margin-bottom: 24px;
+        }
+
+        .demo-close {
+            background: linear-gradient(45deg, #667eea, #764ba2);
+            border: none;
+            color: white;
+            padding: 12px 24px;
+            border-radius: 20px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .demo-close:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 20px rgba(102, 126, 234, 0.3);
+        }
+
+        .node {
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .node:hover {
+            transform: scale(1.1);
+        }
+
+        .link {
+            transition: all 0.3s ease;
+        }
+
+        .link:hover {
+            stroke-opacity: 1 !important;
+            stroke-width: 5 !important;
+        }
+
+        @keyframes targetPulse {
+            0%, 100% { 
+                transform: scale(1);
+                filter: drop-shadow(0 0 15px rgba(102, 126, 234, 0.6));
+            }
+            50% { 
+                transform: scale(1.05);
+                filter: drop-shadow(0 0 25px rgba(102, 126, 234, 0.8));
+            }
+        }
+
+        .target-person {
+            animation: targetPulse 3s ease-in-out infinite;
+        }
+
+        @media (max-width: 768px) {
+            .header {
+                padding: 12px 20px;
+                flex-direction: column;
+                gap: 12px;
+            }
+
+            .controls {
+                gap: 10px;
+                flex-wrap: wrap;
+            }
+
+            .info-panel, .stats-overlay, .layer-legend {
+                left: 20px;
+                right: 20px;
+                width: auto;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <div class="logo">ConnectMap</div>
+        <div class="controls">
+            <div class="control-group">
+                <label>Industry</label>
+                <select id="industry-filter">
+                    <option value="all">All Industries</option>
+                    <option value="tech">Technology</option>
+                    <option value="finance">Finance</option>
+                    <option value="marketing">Marketing</option>
+                    <option value="design">Design</option>
+                </select>
+            </div>
+            <div class="control-group">
+                <label>Strength</label>
+                <select id="strength-filter">
+                    <option value="all">All Connections</option>
+                    <option value="strong">Strong Only</option>
+                    <option value="medium">Medium+</option>
+                </select>
+            </div>
+            <div class="control-group">
+                <label>Zoom</label>
+                <input type="range" id="zoom-control" min="0.5" max="2" step="0.1" value="1">
+            </div>
+            <button class="control-btn" onclick="toggleTheme()">🌓 Dark Mode</button>
+            <button class="control-btn" onclick="showHelp()">❓ Help</button>
+            <button class="add-person-btn" onclick="addRandomPerson()">+ Add Person</button>
+        </div>
+    </div>
+
+    <div class="search-container">
+        <input type="text" class="search-box" id="search-box" placeholder="🔍 Search people or find connections...">
+    </div>
+
+    <div class="quick-actions">
+        <button class="action-btn" id="connection-mode-btn" onclick="toggleConnectionMode()">📍 Find Connection Path</button>
+        <button class="action-btn" id="influence-btn" onclick="toggleInfluenceMode()">💡 Show Influence Sphere</button>
+        <button class="action-btn" id="cluster-btn" onclick="toggleClusterMode()">🏢 Group by Company</button>
+        <button class="action-btn" onclick="resetView()">🔄 Reset View</button>
+    </div>
+
+    <div class="layer-legend">
+        <div class="legend-title">Connection Types</div>
+        <div class="legend-item">
+            <div class="legend-line" style="background: #667eea; height: 4px;"></div>
+            <span>Strong (colleagues, close friends)</span>
+        </div>
+        <div class="legend-item">
+            <div class="legend-line" style="background: #a8edea; height: 2px;"></div>
+            <span>Professional (LinkedIn, industry)</span>
+        </div>
+        <div class="legend-item">
+            <div class="legend-line" style="background: #d299c2; height: 1px; border-top: 1px dashed #d299c2; background: none;"></div>
+            <span>Weak (mutual contacts, inferred)</span>
+        </div>
+    </div>
+
+    <div class="network-container">
+        <svg id="network-svg"></svg>
+    </div>
+
+    <div class="info-panel" id="info-panel">
+        <img class="person-avatar" id="info-avatar" src="" alt="Person">
+        <div class="info-title" id="info-person-name">Click someone to analyze</div>
+        <div class="info-subtitle" id="info-person-title">-</div>
+        <div class="info-detail">
+            <div class="info-label">Company</div>
+            <div id="info-company">-</div>
+        </div>
+        <div class="info-detail">
+            <div class="info-label">Location</div>
+            <div id="info-location">-</div>
+        </div>
+        <div class="info-detail">
+            <div class="info-label">Degree from Target</div>
+            <div id="info-degree">-</div>
+        </div>
+        <div class="info-detail">
+            <div class="info-label">Connection Path</div>
+            <div id="info-path">-</div>
+        </div>
+        <div class="info-detail">
+            <div class="info-label">Influence Score</div>
+            <div id="info-influence">-</div>
+        </div>
+    </div>
+
+    <div class="stats-overlay">
+        <div class="stat-item">
+            <span>Total People</span>
+            <span class="stat-value" id="total-people">44</span>
+        </div>
+        <div class="stat-item">
+            <span>Direct Connections</span>
+            <span class="stat-value" id="direct-connections">8</span>
+        </div>
+        <div class="stat-item">
+            <span>Network Reach</span>
+            <span class="stat-value" id="network-reach">4°</span>
+        </div>
+        <div class="stat-item">
+            <span>Industries</span>
+            <span class="stat-value" id="total-industries">4</span>
+        </div>
+        <div class="stat-item">
+            <span>Influence Score</span>
+            <span class="stat-value" id="influence-score">9.2/10</span>
+        </div>
+    </div>
+
+    <div class="demo-notice" id="demo-notice">
+        <div class="demo-title">🔍 Network Research Tool</div>
+        <div class="demo-text">
+            Analyze professional networks and connections to understand relationship patterns and influence. 
+            The center person is your research target, surrounded by their network organized by relationship strength and degrees of separation.<br><br>
+            <strong>Research insights:</strong> Drag people to explore connections, filter by industry, 
+            and discover influence patterns and connection paths between individuals!
+        </div>
+        <button class="demo-close" onclick="closeDemoNotice()">Start Analysis</button>
+    </div>
+
+    <script>
+        // Extended network data with 44 people
+        const people = [
+            // TARGET PERSON (Research Subject)
+            { id: 1, name: "Sarah Chen", title: "CEO & Co-founder", company: "TechFlow Industries", location: "San Francisco", industry: "tech", degree: 0, size: 50, color: "#667eea", influence: 9.2 },
+            
+            // 1st DEGREE - Direct connections (8 people)
+            { id: 2, name: "Michael Zhang", title: "CTO", company: "TechFlow Industries", location: "San Francisco", industry: "tech", degree: 1, size: 42, color: "#a8edea", influence: 8.1 },
+            { id: 3, name: "Emily Rodriguez", title: "VP Marketing", company: "GrowthLab", location: "Austin", industry: "marketing", degree: 1, size: 40, color: "#d299c2", influence: 7.8 },
+            { id: 4, name: "David Kim", title: "Lead Designer", company: "DesignStudio", location: "San Francisco", industry: "design", degree: 1, size: 38, color: "#fad0c4", influence: 7.2 },
+            { id: 5, name: "Lisa Park", title: "Investment Director", company: "Venture Capital", location: "Palo Alto", industry: "finance", degree: 1, size: 44, color: "#a8e6cf", influence: 8.5 },
+            { id: 6, name: "Robert Johnson", title: "VP Sales", company: "TechFlow Industries", location: "San Francisco", industry: "tech", degree: 1, size: 41, color: "#a8edea", influence: 7.9 },
+            { id: 7, name: "Jennifer Wu", title: "Head of Product", company: "ProductCorp", location: "Seattle", industry: "tech", degree: 1, size: 39, color: "#a8edea", influence: 7.6 },
+            { id: 8, name: "Carlos Martinez", title: "Business Dev", company: "PartnerFirm", location: "Los Angeles", industry: "marketing", degree: 1, size: 37, color: "#d299c2", influence: 7.3 },
+            { id: 9, name: "Amanda Foster", title: "Legal Counsel", company: "LawGroup", location: "San Francisco", industry: "finance", degree: 1, size: 36, color: "#a8e6cf", influence: 7.1 },
+            
+            // 2nd DEGREE - Connected through 1st degree (15 people)
+            { id: 10, name: "Alex Johnson", title: "Senior Engineer", company: "TechFlow Industries", location: "Seattle", industry: "tech", degree: 2, size: 35, color: "#a8edea", influence: 6.9 },
+            { id: 11, name: "Rachel Green", title: "Brand Manager", company: "BrandCorp", location: "Los Angeles", industry: "marketing", degree: 2, size: 33, color: "#d299c2", influence: 6.5 },
+            { id: 12, name: "James Wilson", title: "UX Designer", company: "CreativeAgency", location: "Portland", industry: "design", degree: 2, size: 32, color: "#fad0c4", influence: 6.2 },
+            { id: 13, name: "Anna Schmidt", title: "Financial Analyst", company: "InvestmentFirm", location: "New York", industry: "finance", degree: 2, size: 36, color: "#a8e6cf", influence: 7.1 },
+            { id: 14, name: "Tom Anderson", title: "DevOps Lead", company: "CloudTech", location: "Austin", industry: "tech", degree: 2, size: 34, color: "#a8edea", influence: 6.7 },
+            { id: 15, name: "Maria Gonzalez", title: "Content Director", company: "MediaFlow", location: "Miami", industry: "marketing", degree: 2, size: 31, color: "#d299c2", influence: 6.1 },
+            { id: 16, name: "Kevin Lee", title: "UI Developer", company: "WebTech", location: "San Diego", industry: "design", degree: 2, size: 30, color: "#fad0c4", influence: 5.9 },
+            { id: 17, name: "Sophie Turner", title: "Venture Partner", company: "Growth Capital", location: "Boston", industry: "finance", degree: 2, size: 35, color: "#a8e6cf", influence: 6.8 },
+            { id: 18, name: "Ryan Miller", title: "Product Manager", company: "StartupXYZ", location: "Denver", industry: "tech", degree: 2, size: 33, color: "#a8edea", influence: 6.4 },
+            { id: 19, name: "Laura Davis", title: "Marketing Manager", company: "AdAgency", location: "Chicago", industry: "marketing", degree: 2, size: 32, color: "#d299c2", influence: 6.3 },
+            { id: 20, name: "Chris Wang", title: "Creative Director", company: "DesignHub", location: "Nashville", industry: "design", degree: 2, size: 31, color: "#fad0c4", influence: 6.0 },
+            { id: 21, name: "Maya Patel", title: "Investment Manager", company: "CapitalFlow", location: "Atlanta", industry: "finance", degree: 2, size: 34, color: "#a8e6cf", influence: 6.6 },
+            { id: 22, name: "Daniel Brown", title: "Data Scientist", company: "DataCorp", location: "Phoenix", industry: "tech", degree: 2, size: 32, color: "#a8edea", influence: 6.2 },
+            { id: 23, name: "Jessica Taylor", title: "Social Media Lead", company: "SocialCorp", location: "Orlando", industry: "marketing", degree: 2, size: 30, color: "#d299c2", influence: 5.8 },
+            { id: 24, name: "Mark Thompson", title: "Freelance Designer", company: "Independent", location: "Remote", industry: "design", degree: 2, size: 29, color: "#fad0c4", influence: 5.6 },
+            
+            // 3rd DEGREE - Extended network (12 people)
+            { id: 25, name: "Nina Rodriguez", title: "Software Engineer", company: "TechStart", location: "Austin", industry: "tech", degree: 3, size: 28, color: "#c7ceea", influence: 5.4 },
+            { id: 26, name: "Peter Kim", title: "Marketing Consultant", company: "ConsultCorp", location: "Dallas", industry: "marketing", degree: 3, size: 27, color: "#f7cac9", influence: 5.2 },
+            { id: 27, name: "Sarah Johnson", title: "Graphic Designer", company: "CreativeStudio", location: "Portland", industry: "design", degree: 3, size: 26, color: "#b5ead7", influence: 5.0 },
+            { id: 28, name: "Mike Wilson", title: "Financial Advisor", company: "WealthManagement", location: "Houston", industry: "finance", degree: 3, size: 29, color: "#dda0dd", influence: 5.6 },
+            { id: 29, name: "Lisa Chen", title: "Frontend Developer", company: "WebFlow", location: "Seattle", industry: "tech", degree: 3, size: 27, color: "#c7ceea", influence: 5.1 },
+            { id: 30, name: "Carlos Garcia", title: "Brand Strategist", company: "BrandLab", location: "Las Vegas", industry: "marketing", degree: 3, size: 26, color: "#f7cac9", influence: 4.9 },
+            { id: 31, name: "Emma Davis", title: "Product Designer", company: "DesignFlow", location: "San Diego", industry: "design", degree: 3, size: 25, color: "#b5ead7", influence: 4.7 },
+            { id: 32, name: "John Martinez", title: "Investment Analyst", company: "FundFlow", location: "Phoenix", industry: "finance", degree: 3, size: 28, color: "#dda0dd", influence: 5.3 },
+            { id: 33, name: "Amy Zhang", title: "Backend Developer", company: "ServerTech", location: "Denver", industry: "tech", degree: 3, size: 26, color: "#c7ceea", influence: 4.8 },
+            { id: 34, name: "Robert Lee", title: "Content Manager", company: "ContentFlow", location: "Nashville", industry: "marketing", degree: 3, size: 25, color: "#f7cac9", influence: 4.6 },
+            { id: 35, name: "Jennifer Park", title: "UX Researcher", company: "ResearchLab", location: "Salt Lake City", industry: "design", degree: 3, size: 24, color: "#b5ead7", influence: 4.4 },
+            { id: 36, name: "David Miller", title: "Portfolio Manager", company: "AssetManagement", location: "Charlotte", industry: "finance", degree: 3, size: 27, color: "#dda0dd", influence: 5.0 },
+            
+            // 4th DEGREE - Distant connections (8 people)
+            { id: 37, name: "Alex Turner", title: "Junior Developer", company: "CodeStart", location: "Raleigh", industry: "tech", degree: 4, size: 23, color: "#e6e6fa", influence: 4.1 },
+            { id: 38, name: "Katie Brown", title: "Marketing Intern", company: "GrowthAgency", location: "Tampa", industry: "marketing", degree: 4, size: 22, color: "#ffe4e1", influence: 3.8 },
+            { id: 39, name: "Ryan Garcia", title: "Design Student", company: "University", location: "Tucson", industry: "design", degree: 4, size: 21, color: "#f0f8ff", influence: 3.5 },
+            { id: 40, name: "Maria Thompson", title: "Finance Trainee", company: "BankCorp", location: "Memphis", industry: "finance", degree: 4, size: 22, color: "#faf0e6", influence: 3.7 },
+            { id: 41, name: "Kevin Torres", title: "QA Tester", company: "TestLab", location: "Richmond", industry: "tech", degree: 4, size: 21, color: "#e6e6fa", influence: 3.6 },
+            { id: 42, name: "Lisa Rodriguez", title: "Social Media Coordinator", company: "SocialStart", location: "Jacksonville", industry: "marketing", degree: 4, size: 20, color: "#ffe4e1", influence: 3.4 },
+            { id: 43, name: "Tom Wilson", title: "Freelance Illustrator", company: "Independent", location: "Remote", industry: "design", degree: 4, size: 19, color: "#f0f8ff", influence: 3.2 },
+            { id: 44, name: "Sarah Martinez", title: "Junior Analyst", company: "AnalyticsCorp", location: "Columbus", industry: "finance", degree: 4, size: 20, color: "#faf0e6", influence: 3.3 }
+        ];
+
+        // Expanded connection logic
+        const connections = [
+            // TARGET to 1st degree (direct connections)
+            { source: 1, target: 2, type: "colleague", strength: "strong" },
+            { source: 1, target: 3, type: "professional", strength: "medium" },
+            { source: 1, target: 4, type: "professional", strength: "medium" },
+            { source: 1, target: 5, type: "investor", strength: "strong" },
+            { source: 1, target: 6, type: "colleague", strength: "strong" },
+            { source: 1, target: 7, type: "professional", strength: "medium" },
+            { source: 1, target: 8, type: "professional", strength: "medium" },
+            { source: 1, target: 9, type: "professional", strength: "strong" },
+            
+            // 1st to 2nd degree connections
+            { source: 2, target: 10, type: "colleague", strength: "strong" },
+            { source: 2, target: 14, type: "colleague", strength: "medium" },
+            { source: 2, target: 18, type: "professional", strength: "medium" },
+            { source: 3, target: 11, type: "professional", strength: "medium" },
+            { source: 3, target: 15, type: "professional", strength: "strong" },
+            { source: 3, target: 19, type: "professional", strength: "medium" },
+            { source: 3, target: 23, type: "professional", strength: "weak" },
+            { source: 4, target: 12, type: "professional", strength: "medium" },
+            { source: 4, target: 16, type: "professional", strength: "medium" },
+            { source: 4, target: 20, type: "professional", strength: "strong" },
+            { source: 4, target: 24, type: "professional", strength: "weak" },
+            { source: 5, target: 13, type: "colleague", strength: "strong" },
+            { source: 5, target: 17, type: "colleague", strength: "strong" },
+            { source: 5, target: 21, type: "professional", strength: "medium" },
+            { source: 6, target: 22, type: "professional", strength: "medium" },
+            { source: 7, target: 18, type: "professional", strength: "strong" },
+            { source: 8, target: 19, type: "professional", strength: "medium" },
+            { source: 9, target: 13, type: "professional", strength: "medium" },
+            
+            // 2nd to 3rd degree connections
+            { source: 10, target: 25, type: "professional", strength: "medium" },
+            { source: 10, target: 29, type: "professional", strength: "weak" },
+            { source: 11, target: 26, type: "professional", strength: "medium" },
+            { source: 11, target: 30, type: "professional", strength: "weak" },
+            { source: 12, target: 27, type: "professional", strength: "medium" },
+            { source: 12, target: 31, type: "professional", strength: "strong" },
+            { source: 13, target: 28, type: "colleague", strength: "medium" },
+            { source: 13, target: 32, type: "professional", strength: "medium" },
+            { source: 14, target: 25, type: "professional", strength: "weak" },
+            { source: 14, target: 33, type: "professional", strength: "medium" },
+            { source: 15, target: 26, type: "professional", strength: "strong" },
+            { source: 15, target: 34, type: "professional", strength: "medium" },
+            { source: 16, target: 27, type: "professional", strength: "weak" },
+            { source: 16, target: 35, type: "professional", strength: "medium" },
+            { source: 17, target: 28, type: "colleague", strength: "strong" },
+            { source: 17, target: 36, type: "professional", strength: "medium" },
+            { source: 18, target: 25, type: "professional", strength: "medium" },
+            { source: 19, target: 26, type: "professional", strength: "medium" },
+            { source: 20, target: 27, type: "professional", strength: "strong" },
+            { source: 21, target: 28, type: "professional", strength: "medium" },
+            { source: 22, target: 29, type: "professional", strength: "weak" },
+            { source: 23, target: 30, type: "professional", strength: "medium" },
+            { source: 24, target: 31, type: "professional", strength: "medium" },
+            
+            // 3rd to 4th degree connections
+            { source: 25, target: 37, type: "professional", strength: "weak" },
+            { source: 25, target: 41, type: "professional", strength: "weak" },
+            { source: 26, target: 38, type: "professional", strength: "weak" },
+            { source: 26, target: 42, type: "professional", strength: "weak" },
+            { source: 27, target: 39, type: "professional", strength: "weak" },
+            { source: 27, target: 43, type: "professional", strength: "weak" },
+            { source: 28, target: 40, type: "professional", strength: "weak" },
+            { source: 28, target: 44, type: "professional", strength: "weak" },
+            { source: 29, target: 37, type: "acquaintance", strength: "weak" },
+            { source: 30, target: 38, type: "acquaintance", strength: "weak" },
+            { source: 31, target: 39, type: "acquaintance", strength: "weak" },
+            { source: 32, target: 40, type: "acquaintance", strength: "weak" },
+            { source: 33, target: 41, type: "professional", strength: "weak" },
+            { source: 34, target: 42, type: "professional", strength: "weak" },
+            { source: 35, target: 43, type: "acquaintance", strength: "weak" },
+            { source: 36, target: 44, type: "professional", strength: "weak" },
+            
+            // Cross-connections for realistic network
+            { source: 2, target: 5, type: "professional", strength: "medium" },
+            { source: 3, target: 4, type: "professional", strength: "weak" },
+            { source: 6, target: 7, type: "colleague", strength: "strong" },
+            { source: 10, target: 12, type: "acquaintance", strength: "weak" },
+            { source: 11, target: 13, type: "acquaintance", strength: "weak" },
+            { source: 14, target: 16, type: "professional", strength: "weak" },
+            { source: 15, target: 17, type: "acquaintance", strength: "weak" },
+            { source: 18, target: 20, type: "professional", strength: "medium" },
+            { source: 19, target: 21, type: "acquaintance", strength: "weak" },
+            { source: 22, target: 24, type: "acquaintance", strength: "weak" }
+        ];
+
+        // SVG setup
+        const svg = d3.select("#network-svg");
+        const width = window.innerWidth;
+        const height = window.innerHeight;
+        const centerX = width / 2;
+        const centerY = height / 2;
+
+        svg.attr("width", width).attr("height", height);
+
+        // Enhanced interaction state
+        let currentMode = 'normal';
+        let selectedPeople = [];
+        let pathHighlights = [];
+        let influenceSphere = null;
+        let companyClusters = [];
+
+        // Create main container
+        const container = svg.append("g").attr("class", "main-container");
+
+        // Add simple zoom functionality
+        let currentZoom = 1;
+        svg.call(d3.zoom()
+            .scaleExtent([0.3, 3])
+            .on("zoom", function(event) {
+                const { transform } = event;
+                container.attr("transform", transform);
+                currentZoom = transform.k;
+            }));
+
+        // Create gradients for bubbles
+        const defs = svg.append("defs");
+        people.forEach(person => {
+            const gradient = defs.append("radialGradient")
+                .attr("id", `gradient-${person.id}`)
+                .attr("cx", "30%")
+                .attr("cy", "30%");
+            
+            gradient.append("stop")
+                .attr("offset", "0%")
+                .attr("stop-color", "#ffffff")
+                .attr("stop-opacity", 0.9);
+            
+            gradient.append("stop")
+                .attr("offset", "70%")
+                .attr("stop-color", person.color)
+                .attr("stop-opacity", 0.7);
+            
+            gradient.append("stop")
+                .attr("offset", "100%")
+                .attr("stop-color", person.color)
+                .attr("stop-opacity", 1);
+        });
+
+        // Position people in degrees with MORE SPREAD
+        const degreeRadii = [0, 220, 380, 540, 700]; // Much larger radii for better spread
+        people.forEach(person => {
+            const radius = degreeRadii[person.degree];
+            if (person.degree === 0) {
+                person.x = centerX;
+                person.y = centerY;
+            } else {
+                const peopleInDegree = people.filter(p => p.degree === person.degree);
+                const index = peopleInDegree.indexOf(person);
+                const angleStep = (2 * Math.PI) / peopleInDegree.length;
+                const angle = angleStep * index + (Math.random() - 0.5) * 0.4; // More angular spread
+                
+                const radiusVariation = radius + (Math.random() - 0.5) * 80; // More radius variation
+                
+                person.x = centerX + radiusVariation * Math.cos(angle);
+                person.y = centerY + radiusVariation * Math.sin(angle);
+            }
+        });
+
+        // Create degree boundary circles with MORE VISIBLE color
+        container.append("g")
+            .attr("class", "degree-boundaries")
+            .selectAll("circle")
+            .data([220, 380, 540, 700]) // Updated radii
+            .enter().append("circle")
+            .attr("class", "degree-circles")
+            .attr("cx", centerX)
+            .attr("cy", centerY)
+            .attr("r", d => d)
+            .style("stroke", "rgba(102, 126, 234, 0.3)") // More visible
+            .style("stroke-width", "2"); // Thicker lines
+
+        // Create force simulation
+        const simulation = d3.forceSimulation(people)
+            .force("link", d3.forceLink(connections).id(d => d.id).distance(d => {
+                const strengthDistance = { strong: 80, medium: 120, weak: 160 };
+                return strengthDistance[d.strength] || 120;
+            }).strength(0.6))
+            .force("charge", d3.forceManyBody().strength(d => {
+                return d.degree === 0 ? -1000 : -300 - (d.size * 5);
+            }))
+            .force("center", d3.forceCenter(centerX, centerY))
+            .force("collision", d3.forceCollide().radius(d => d.size + 10).strength(0.7))
+            .force("radial", d3.forceRadial(d => degreeRadii[d.degree], centerX, centerY).strength(0.3)); // Weaker radial force for more spread
+
+        // Create connection lines
+        const link = container.append("g")
+            .attr("class", "links")
+            .selectAll("line")
+            .data(connections)
+            .enter().append("line")
+            .attr("class", "link")
+            .style("stroke", d => {
+                if (d.strength === "strong") return "#667eea";
+                if (d.strength === "medium") return "#a8edea";
+                return "#d299c2";
+            })
+            .style("stroke-width", d => {
+                if (d.strength === "strong") return 4;
+                if (d.strength === "medium") return 2;
+                return 1;
+            })
+            .style("stroke-opacity", d => {
+                if (d.strength === "strong") return 0.8;
+                if (d.strength === "medium") return 0.6;
+                return 0.4;
+            })
+            .style("stroke-dasharray", d => d.strength === "weak" ? "5,3" : "none")
+            .style("stroke-linecap", "round");
+
+        // Create nodes - the bubbles ARE the interactive elements
+        const node = container.append("g")
+            .attr("class", "nodes")
+            .selectAll("circle")
+            .data(people)
+            .enter().append("circle")
+            .attr("class", d => d.degree === 0 ? "node target-person" : "node")
+            .attr("r", d => d.size)
+            .style("fill", d => `url(#gradient-${d.id})`)
+            .style("stroke", d => d.color)
+            .style("stroke-width", d => d.degree === 0 ? 4 : 2)
+            .style("filter", d => d.degree === 0 ? "drop-shadow(0 0 15px rgba(102, 126, 234, 0.6))" : "drop-shadow(0 4px 8px rgba(0,0,0,0.15))")
+            .style("cursor", "pointer")
+            .call(d3.drag()
+                .filter(d => d.degree !== 0) // Only allow dragging non-main person
+                .on("start", dragstarted)
+                .on("drag", dragged)
+                .on("end", dragended))
+            .on("click", function(event, d) {
+                event.stopPropagation();
+                if (currentMode === 'connection') {
+                    handleConnectionMode(d);
+                } else if (currentMode === 'influence') {
+                    showInfluenceSphere(d);
+                } else {
+                    showPersonInfo(event, d);
+                }
+            })
+            .on("mouseover", function(event, d) {
+                if (currentMode === 'normal') {
+                    d3.select(this).classed("highlighted", true);
+                    highlightConnections(d);
+                }
+            })
+            .on("mouseout", function(event, d) {
+                if (currentMode === 'normal') {
+                    d3.select(this).classed("highlighted", false);
+                    resetLinkStyles();
+                }
+            });
+
+        // Add text labels - separate from the interactive bubbles
+        const labels = container.append("g")
+            .attr("class", "labels")
+            .selectAll("g")
+            .data(people)
+            .enter().append("g")
+            .style("pointer-events", "none"); // Labels don't interfere with bubble clicks
+
+        // Add names
+        labels.append("text")
+            .attr("dy", d => d.size + 18)
+            .attr("text-anchor", "middle")
+            .text(d => d.name)
+            .style("fill", "#2d3748")
+            .style("font-size", d => d.degree === 0 ? "16px" : d.degree === 1 ? "14px" : "12px")
+            .style("font-weight", d => d.degree === 0 ? "700" : "600")
+            .style("filter", "drop-shadow(0 1px 2px rgba(255,255,255,0.8))");
+
+        // Add titles
+        labels.append("text")
+            .attr("dy", d => d.size + 34)
+            .attr("text-anchor", "middle")
+            .text(d => d.title)
+            .style("fill", "#718096")
+            .style("font-size", d => d.degree === 0 ? "12px" : "10px");
+
+        // Update positions - both bubbles and labels move together
+        simulation.on("tick", () => {
+            link
+                .attr("x1", d => d.source.x)
+                .attr("y1", d => d.source.y)
+                .attr("x2", d => d.target.x)
+                .attr("y2", d => d.target.y);
+
+            // Update bubble positions
+            node
+                .attr("cx", d => d.x)
+                .attr("cy", d => d.y);
+
+            // Update label positions
+            labels
+                .attr("transform", d => `translate(${d.x},${d.y})`);
+        });
+
+        function highlightConnections(d) {
+            link.style("stroke-opacity", l => 
+                (l.source === d || l.target === d) ? 1 : 0.1
+            ).style("stroke-width", l => 
+                (l.source === d || l.target === d) ? (l.strength === "strong" ? 6 : l.strength === "medium" ? 4 : 2) : 
+                (l.strength === "strong" ? 4 : l.strength === "medium" ? 2 : 1)
+            );
+        }
+
+        function resetLinkStyles() {
+            link.style("stroke-opacity", d => {
+                if (d.strength === "strong") return 0.8;
+                if (d.strength === "medium") return 0.6;
+                return 0.4;
+            }).style("stroke-width", d => {
+                if (d.strength === "strong") return 4;
+                if (d.strength === "medium") return 2;
+                return 1;
+            });
+        }
+
+        // Enhanced interaction functions
+        function closeConnectionMode() {
+            currentMode = 'normal';
+            selectedPeople = [];
+            clearHighlights();
+            updateActionButtons();
+            updateConnectionModeUI();
+            node.classed("selected", false);
+        }
+
+        function toggleInfluenceMode() {
+            currentMode = currentMode === 'influence' ? 'normal' : 'influence';
+            updateActionButtons();
+            clearHighlights();
+        }
+
+        function toggleClusterMode() {
+            if (companyClusters.length > 0) {
+                clearClusters();
+            } else {
+                showCompanyClusters();
+            }
+        }
+
+        function resetView() {
+            currentMode = 'normal';
+            selectedPeople = [];
+            clearHighlights();
+            clearClusters();
+            updateActionButtons();
+            updateConnectionModeUI();
+            
+            // Reset all node and link styles
+            node.classed("selected highlighted", false);
+            resetLinkStyles();
+        }
+
+        function handleConnectionMode(person) {
+            if (selectedPeople.length === 2) {
+                selectedPeople = [];
+            }
+            
+            if (!selectedPeople.find(p => p.id === person.id)) {
+                selectedPeople.push(person);
+                
+                if (selectedPeople.length === 2) {
+                    findConnectionPath(selectedPeople[0], selectedPeople[1]);
+                }
+            }
+            
+            updateConnectionModeUI();
+            updateSelectedNodes();
+        }
+
+        function findConnectionPath(person1, person2) {
+            const path = findShortestPath(person1.id, person2.id);
+            
+            if (path.length > 0) {
+                highlightPath(path);
+                displayPathInfo(path);
+            } else {
+                document.getElementById("connection-path").innerHTML = `
+                    <strong>No direct path found</strong><br>
+                    ${person1.name} and ${person2.name} are not connected through this network.
+                `;
+            }
+        }
+
+        function findShortestPath(startId, endId) {
+            if (startId === endId) return [startId];
+            
+            const queue = [{id: startId, path: [startId]}];
+            const visited = new Set();
+            
+            while (queue.length > 0) {
+                const {id, path} = queue.shift();
+                
+                if (visited.has(id)) continue;
+                visited.add(id);
+                
+                const connectedIds = connections
+                    .filter(c => (c.source.id === id || c.target.id === id || c.source === id || c.target === id))
+                    .map(c => {
+                        const sourceId = c.source.id || c.source;
+                        const targetId = c.target.id || c.target;
+                        return sourceId === id ? targetId : sourceId;
+                    });
+                
+                for (const connectedId of connectedIds) {
+                    if (connectedId === endId) {
+                        return [...path, connectedId];
+                    }
+                    
+                    if (!visited.has(connectedId)) {
+                        queue.push({id: connectedId, path: [...path, connectedId]});
+                    }
+                }
+            }
+            
+            return [];
+        }
+
+        function highlightPath(pathIds) {
+            clearHighlights();
+            
+            // Highlight the path connections
+            for (let i = 0; i < pathIds.length - 1; i++) {
+                const connection = connections.find(c => 
+                    ((c.source.id === pathIds[i] || c.source === pathIds[i]) && 
+                     (c.target.id === pathIds[i + 1] || c.target === pathIds[i + 1])) ||
+                    ((c.source.id === pathIds[i + 1] || c.source === pathIds[i + 1]) && 
+                     (c.target.id === pathIds[i] || c.target === pathIds[i]))
+                );
+                
+                if (connection) {
+                    pathHighlights.push(connection);
+                }
+            }
+            
+            // Apply path highlighting
+            link.classed("path-highlight", d => pathHighlights.includes(d));
+            
+            // Highlight path nodes
+            node.classed("highlighted", d => pathIds.includes(d.id));
+        }
+
+        function displayPathInfo(pathIds) {
+            const pathNames = pathIds.map(id => people.find(p => p.id === id).name);
+            const pathHtml = pathNames.join(' <span class="path-arrow">→</span> ');
+            
+            document.getElementById("connection-path").innerHTML = `
+                <strong>Connection Path Found:</strong><br>
+                ${pathHtml}<br>
+                <small style="color: #718096; margin-top: 8px; display: block;">
+                    ${pathIds.length - 1} degree${pathIds.length > 2 ? 's' : ''} of separation
+                </small>
+            `;
+        }
+
+        function showInfluenceSphere(person) {
+            clearHighlights();
+            
+            // Find all people within 2 degrees
+            const influenceIds = new Set([person.id]);
+            const firstDegree = connections
+                .filter(c => (c.source.id === person.id || c.target.id === person.id || c.source === person.id || c.target === person.id))
+                .map(c => {
+                    const sourceId = c.source.id || c.source;
+                    const targetId = c.target.id || c.target;
+                    return sourceId === person.id ? targetId : sourceId;
+                });
+            
+            firstDegree.forEach(id => influenceIds.add(id));
+            
+            // Add second degree
+            firstDegree.forEach(firstId => {
+                const secondDegree = connections
+                    .filter(c => (c.source.id === firstId || c.target.id === firstId || c.source === firstId || c.target === firstId))
+                    .map(c => {
+                        const sourceId = c.source.id || c.source;
+                        const targetId = c.target.id || c.target;
+                        return sourceId === firstId ? targetId : sourceId;
+                    });
+                secondDegree.forEach(id => influenceIds.add(id));
+            });
+            
+            // Highlight influence sphere
+            node.style("opacity", d => influenceIds.has(d.id) ? 1 : 0.3);
+            labels.style("opacity", d => influenceIds.has(d.id) ? 1 : 0.3);
+            link.style("opacity", d => {
+                const sourceId = d.source.id || d.source;
+                const targetId = d.target.id || d.target;
+                return influenceIds.has(sourceId) && influenceIds.has(targetId) ? 1 : 0.1;
+            });
+            
+            // Create influence circle
+            if (influenceSphere) influenceSphere.remove();
+            influenceSphere = container.append("circle")
+                .attr("class", "influence-sphere")
+                .attr("cx", person.x)
+                .attr("cy", person.y)
+                .attr("r", 200)
+                .style("pointer-events", "none");
+        }
+
+        function showCompanyClusters() {
+            const companies = [...new Set(people.map(p => p.company))];
+            
+            companies.forEach(company => {
+                const companyPeople = people.filter(p => p.company === company);
+                if (companyPeople.length > 1) {
+                    const avgX = companyPeople.reduce((sum, p) => sum + p.x, 0) / companyPeople.length;
+                    const avgY = companyPeople.reduce((sum, p) => sum + p.y, 0) / companyPeople.length;
+                    const maxDistance = Math.max(...companyPeople.map(p => 
+                        Math.sqrt((p.x - avgX) ** 2 + (p.y - avgY) ** 2)
+                    )) + 50;
+                    
+                    const cluster = container.append("circle")
+                        .attr("class", "cluster-group")
+                        .attr("cx", avgX)
+                        .attr("cy", avgY)
+                        .attr("r", maxDistance)
+                        .style("pointer-events", "none");
+                    
+                    companyClusters.push(cluster);
+                }
+            });
+        }
+
+        function clearClusters() {
+            companyClusters.forEach(cluster => cluster.remove());
+            companyClusters = [];
+        }
+
+        function clearHighlights() {
+            pathHighlights = [];
+            if (influenceSphere) {
+                influenceSphere.remove();
+                influenceSphere = null;
+            }
+            
+            link.classed("path-highlight", false);
+            node.style("opacity", 1).classed("highlighted", false);
+            labels.style("opacity", 1);
+            link.style("opacity", d => {
+                if (d.strength === "strong") return 0.8;
+                if (d.strength === "medium") return 0.6;
+                return 0.4;
+            });
+        }
+
+        function updateConnectionModeUI() {
+            const modePanel = document.getElementById("connection-mode");
+            const selectedDiv = document.getElementById("selected-people");
+            
+            if (currentMode === 'connection') {
+                modePanel.classList.add("active");
+                selectedDiv.innerHTML = selectedPeople.map(p => 
+                    `<span class="selected-person">${p.name}</span>`
+                ).join('');
+                
+                if (selectedPeople.length === 0) {
+                    document.getElementById("connection-path").textContent = "Click two people to find the connection path between them";
+                }
+            } else {
+                modePanel.classList.remove("active");
+            }
+        }
+
+        function updateSelectedNodes() {
+            node.classed("selected", d => selectedPeople.find(p => p.id === d.id));
+        }
+
+        function updateActionButtons() {
+            document.getElementById("connection-mode-btn").classList.toggle("active", currentMode === 'connection');
+            document.getElementById("influence-btn").classList.toggle("active", currentMode === 'influence');
+        }
+
+        // Search functionality
+        document.getElementById("search-box").addEventListener("input", function(e) {
+            const searchTerm = e.target.value.toLowerCase();
+            
+            if (searchTerm.length === 0) {
+                node.style("opacity", 1);
+                labels.style("opacity", 1);
+                return;
+            }
+            
+            node.style("opacity", d => {
+                const matches = d.name.toLowerCase().includes(searchTerm) || 
+                               d.company.toLowerCase().includes(searchTerm) ||
+                               d.title.toLowerCase().includes(searchTerm);
+                return matches ? 1 : 0.3;
+            });
+
+            labels.style("opacity", d => {
+                const matches = d.name.toLowerCase().includes(searchTerm) || 
+                               d.company.toLowerCase().includes(searchTerm) ||
+                               d.title.toLowerCase().includes(searchTerm);
+                return matches ? 1 : 0.3;
+            });
+        });
+
+        // Drag functions - only for non-main people
+        function dragstarted(event, d) {
+            if (d.degree === 0) return; // Don't allow dragging main person
+            if (!event.active) simulation.alphaTarget(0.3).restart();
+            d.fx = d.x;
+            d.fy = d.y;
+        }
+
+        function dragged(event, d) {
+            if (d.degree === 0) return; // Don't allow dragging main person
+            d.fx = event.x;
+            d.fy = event.y;
+        }
+
+        function dragended(event, d) {
+            if (d.degree === 0) return; // Don't allow dragging main person
+            if (!event.active) simulation.alphaTarget(0);
+            d.fx = null;
+            d.fy = null;
+        }
+
+        // Show person info
+        function showPersonInfo(event, d) {
+            const panel = document.getElementById("info-panel");
+            
+            document.getElementById("info-person-name").textContent = d.name;
+            document.getElementById("info-person-title").textContent = d.title;
+            document.getElementById("info-company").textContent = d.company;
+            document.getElementById("info-location").textContent = d.location;
+            
+            const degreeText = d.degree === 0 ? "Target Person" : `${d.degree}${d.degree === 1 ? 'st' : d.degree === 2 ? 'nd' : d.degree === 3 ? 'rd' : 'th'} degree`;
+            document.getElementById("info-degree").textContent = degreeText;
+            
+            document.getElementById("info-path").textContent = "Path analysis available";
+            document.getElementById("info-influence").textContent = `${d.influence}/10`;
+            
+            panel.classList.add("active");
+        }
+
+        // Industry filter
+        document.getElementById("industry-filter").addEventListener("change", function(e) {
+            const selectedIndustry = e.target.value;
+            
+            node.style("opacity", d => {
+                return selectedIndustry === "all" || d.industry === selectedIndustry ? 1 : 0.3;
+            });
+            
+            link.style("opacity", d => {
+                const source = people.find(p => p.id === d.source.id || p.id === d.source);
+                const target = people.find(p => p.id === d.target.id || p.id === d.target);
+                const sourceMatch = selectedIndustry === "all" || source.industry === selectedIndustry;
+                const targetMatch = selectedIndustry === "all" || target.industry === selectedIndustry;
+                return sourceMatch && targetMatch ? 1 : 0.2;
+            });
+        });
+
+        // Strength filter
+        document.getElementById("strength-filter").addEventListener("change", function(e) {
+            const selectedStrength = e.target.value;
+            
+            link.style("opacity", d => {
+                if (selectedStrength === "all") return d.strength === "strong" ? 0.8 : d.strength === "medium" ? 0.6 : 0.4;
+                if (selectedStrength === "strong") return d.strength === "strong" ? 0.8 : 0.1;
+                if (selectedStrength === "medium") return d.strength === "strong" || d.strength === "medium" ? 0.8 : 0.1;
+                return 0.4;
+            });
+        });
+
+        // Zoom control
+        document.getElementById("zoom-control").addEventListener("input", function(e) {
+            const scale = parseFloat(e.target.value);
+            svg.transition().duration(300).call(
+                d3.zoom().transform,
+                d3.zoomIdentity.scale(scale)
+            );
+        });
+
+        // Theme toggle
+        function toggleTheme() {
+            const body = document.body;
+            const currentTheme = body.getAttribute('data-theme');
+            const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
+            body.setAttribute('data-theme', newTheme);
+            
+            const toggle = document.querySelector('.control-btn');
+            toggle.textContent = newTheme === 'dark' ? '☀️ Light Mode' : '🌓 Dark Mode';
+            
+            localStorage.setItem('theme', newTheme);
+        }
+
+        // Add random person
+        function addRandomPerson() {
+            const colors = ["#c7ceea", "#f7cac9", "#b5ead7", "#dda0dd", "#e6e6fa", "#ffe4e1"];
+            const names = ["Jordan Davis", "Taylor Smith", "Casey Lee", "Morgan Kim", "Riley Chen"];
+            const titles = ["Consultant", "Manager", "Analyst", "Developer", "Designer"];
+            const companies = ["StartupABC", "TechFlow", "ConsultCorp", "DataHub", "CreativeLab"];
+            
+            const newId = Math.max(...people.map(p => p.id)) + 1;
+            const degree = Math.floor(Math.random() * 2) + 3;
+            
+            const newPerson = {
+                id: newId,
+                name: names[Math.floor(Math.random() * names.length)],
+                title: titles[Math.floor(Math.random() * titles.length)],
+                company: companies[Math.floor(Math.random() * companies.length)],
+                location: "Remote",
+                industry: ["tech", "marketing", "design", "finance"][Math.floor(Math.random() * 4)],
+                degree: degree,
+                size: 30 - (degree * 2),
+                color: colors[Math.floor(Math.random() * colors.length)],
+                influence: Math.round((Math.random() * 3 + 2) * 10) / 10
+            };
+            
+            people.push(newPerson);
+            location.reload();
+        }
+
+        function closeDemoNotice() {
+            document.getElementById("demo-notice").classList.add("hidden");
+        }
+
+        function showHelp() {
+            document.getElementById("demo-notice").classList.remove("hidden");
+        }
+
+        // Close info panel when clicking elsewhere  
+        document.addEventListener("click", function(e) {
+            if (!e.target.closest(".info-panel") && !e.target.closest(".node")) {
+                document.getElementById("info-panel").classList.remove("active");
+            }
+        });
+
+        // Load theme
+        document.addEventListener('DOMContentLoaded', function() {
+            const savedTheme = localStorage.getItem('theme') || 'light';
+            document.body.setAttribute('data-theme', savedTheme);
+        });
+    </script>
+</body>
+</html>
