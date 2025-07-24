@@ -1,23 +1,4 @@
-        function toggleConnectionMode() {
-            if (currentMode === 'connection') {
-                closeConnectionMode();
-            } else {
-                currentMode = 'connection';
-                selectedPeople = [];
-                updateConnectionModeUI();
-                updateActionButtons();
-                clearHighlights();
-            }
-        }    <div class="connection-mode" id="connection-mode">
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
-            <div class="mode-title">Connection Path Finder</div>
-            <button onclick="closeConnectionMode()" style="background: none; border: none; font-size: 18px; cursor: pointer;">✕</button>
-        </div>
-        <div class="selected-people" id="selected-people"></div>
-        <div class="connection-path" id="connection-path">
-            Click two people to find the connection path between them
-        </div>
-    </div><!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
@@ -41,17 +22,17 @@
         }
 
         [data-theme="dark"] {
-            --primary-bg: #1a202c;
-            --secondary-bg: #2d3748;
-            --text-primary: #f7fafc;
-            --text-secondary: #a0aec0;
-            --border-color: #4a5568;
-            --glass-bg: rgba(45, 55, 72, 0.95);
+            --primary-bg: #0f172a;
+            --secondary-bg: #1e293b;
+            --text-primary: #f1f5f9;
+            --text-secondary: #cbd5e1;
+            --border-color: #334155;
+            --glass-bg: rgba(30, 41, 59, 0.95);
         }
 
         body {
             font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
-            background: linear-gradient(135deg, var(--primary-bg) 0%, #f8f9fa 100%);
+            background: var(--primary-bg);
             color: var(--text-primary);
             overflow: hidden;
             height: 100vh;
@@ -473,15 +454,35 @@
             margin-bottom: 24px;
         }
 
-        .demo-close {
+        .demo-buttons {
+            display: flex;
+            gap: 12px;
+            justify-content: center;
+        }
+
+        .demo-primary {
             background: linear-gradient(45deg, #667eea, #764ba2);
             border: none;
             color: white;
+        }
+
+        .demo-secondary {
+            background: transparent;
+            border: 1px solid var(--border-color);
+            color: var(--text-secondary);
+        }
+
+        .demo-secondary:hover {
+            background: var(--secondary-bg);
+        }
+
+        .demo-close {
             padding: 12px 24px;
             border-radius: 20px;
             font-weight: 600;
             cursor: pointer;
             transition: all 0.3s ease;
+            font-size: 14px;
         }
 
         .demo-close:hover {
@@ -495,7 +496,7 @@
         }
 
         .node:hover {
-            transform: scale(1.1);
+            transform: scale(1.05);
         }
 
         .link {
@@ -606,7 +607,6 @@
     </div>
 
     <div class="info-panel" id="info-panel">
-        <img class="person-avatar" id="info-avatar" src="" alt="Person">
         <div class="info-title" id="info-person-name">Click someone to analyze</div>
         <div class="info-subtitle" id="info-person-title">-</div>
         <div class="info-detail">
@@ -654,15 +654,40 @@
         </div>
     </div>
 
-    <div class="demo-notice" id="demo-notice">
-        <div class="demo-title">🔍 Network Research Tool</div>
-        <div class="demo-text">
-            Analyze professional networks and connections to understand relationship patterns and influence. 
-            The center person is your research target, surrounded by their network organized by relationship strength and degrees of separation.<br><br>
-            <strong>Research insights:</strong> Drag people to explore connections, filter by industry, 
-            and discover influence patterns and connection paths between individuals!
+    <div class="connection-mode" id="connection-mode">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+            <div class="mode-title">Connection Path Finder</div>
+            <button onclick="closeConnectionMode()" style="background: none; border: none; font-size: 18px; cursor: pointer;">✕</button>
         </div>
-        <button class="demo-close" onclick="closeDemoNotice()">Start Analysis</button>
+        <div class="selected-people" id="selected-people"></div>
+        <div class="connection-path" id="connection-path">
+            Click two people to find the connection path between them
+        </div>
+    </div>
+
+    <div class="demo-notice" id="demo-notice">
+        <div class="demo-title">🔍 ConnectMap - Find Your Connection Path</div>
+        <div class="demo-text" id="demo-text">
+            <strong>How ConnectMap Works:</strong><br><br>
+            
+            Want to know how you're connected to someone? Simply provide their LinkedIn, X/Twitter, Facebook, or Instagram profile and ConnectMap will analyze your existing network to discover:<br><br>
+            
+            • <strong>Your connection path</strong> to that person (through mutual friends, colleagues, etc.)<br>
+            • <strong>Shared connections</strong> who could introduce you<br>
+            • <strong>Network overlap</strong> and common contacts<br>
+            • <strong>Shortest path</strong> to reach them through your network<br>
+            • <strong>Influence mapping</strong> to identify key connectors<br><br>
+            
+            The app uses your existing social network data to map the relationship degrees between you and your target person.<br><br>
+            
+            <span style="color: var(--text-secondary); font-size: 12px;">
+                ⚡ Demo Mode: This shows how you might be connected to Sarah Chen through your network.
+            </span>
+        </div>
+        <div class="demo-buttons">
+            <button class="demo-close demo-primary" onclick="showResearchInsights()">How to Use →</button>
+            <button class="demo-close demo-secondary" onclick="closeDemoNotice()">Skip Tutorial</button>
+        </div>
     </div>
 
     <script>
@@ -830,15 +855,21 @@
         // Create main container
         const container = svg.append("g").attr("class", "main-container");
 
-        // Add simple zoom functionality
+        // FIXED: Add zoom functionality with proper event filtering
         let currentZoom = 1;
-        svg.call(d3.zoom()
-            .scaleExtent([0.3, 3])
+        const zoomBehavior = d3.zoom()
+            .filter(function(event) {
+                // Ignore zoom on node interactions - check for node-group class instead
+                return !event.target.closest('.node-group') && !event.target.classList.contains('node');
+            })
+            .scaleExtent([0.5, 2])
             .on("zoom", function(event) {
                 const { transform } = event;
                 container.attr("transform", transform);
                 currentZoom = transform.k;
-            }));
+            });
+        
+        svg.call(zoomBehavior);
 
         // Create gradients for bubbles
         const defs = svg.append("defs");
@@ -864,51 +895,94 @@
                 .attr("stop-opacity", 1);
         });
 
-        // Position people in degrees with MORE SPREAD
-        const degreeRadii = [0, 220, 380, 540, 700]; // Much larger radii for better spread
+        // Position people in degrees with BETTER CIRCULAR SPREAD and minimum distances
+        const degreeRadii = [0, 400, 650, 900, 1200]; // Increased radii for better spread
+        const minDistances = [0, 80, 70, 60, 50]; // Minimum distance between bubbles by degree
+        
+        // Group people by degree for better positioning
+        const peopleByDegree = {};
+        people.forEach(person => {
+            if (!peopleByDegree[person.degree]) {
+                peopleByDegree[person.degree] = [];
+            }
+            peopleByDegree[person.degree].push(person);
+        });
+        
         people.forEach(person => {
             const radius = degreeRadii[person.degree];
             if (person.degree === 0) {
+                // Pin Sarah Chen to exact center
                 person.x = centerX;
                 person.y = centerY;
+                person.fx = centerX; // Fixed position
+                person.fy = centerY;
             } else {
-                const peopleInDegree = people.filter(p => p.degree === person.degree);
+                const peopleInDegree = peopleByDegree[person.degree];
                 const index = peopleInDegree.indexOf(person);
-                const angleStep = (2 * Math.PI) / peopleInDegree.length;
-                const angle = angleStep * index + (Math.random() - 0.5) * 0.4; // More angular spread
+                const totalInDegree = peopleInDegree.length;
                 
-                const radiusVariation = radius + (Math.random() - 0.5) * 80; // More radius variation
+                // Calculate optimal spacing to avoid overlap
+                const circumference = 2 * Math.PI * radius;
+                const optimalSpacing = minDistances[person.degree];
+                const maxPeopleForRadius = Math.floor(circumference / optimalSpacing);
                 
-                person.x = centerX + radiusVariation * Math.cos(angle);
-                person.y = centerY + radiusVariation * Math.sin(angle);
+                let finalRadius = radius;
+                if (totalInDegree > maxPeopleForRadius) {
+                    // If too many people, slightly increase radius
+                    finalRadius = radius + ((totalInDegree - maxPeopleForRadius) * 15);
+                }
+                
+                // More even angular distribution
+                const angleStep = (2 * Math.PI) / totalInDegree;
+                const baseAngle = angleStep * index;
+                
+                // Add some variation but keep it circular
+                const angleVariation = (Math.random() - 0.5) * 0.3; // Reduced variation
+                const angle = baseAngle + angleVariation;
+                
+                // Add slight radius variation while maintaining circular structure
+                const radiusVariation = (Math.random() - 0.5) * 40; // Reduced variation
+                const actualRadius = finalRadius + radiusVariation;
+                
+                person.x = centerX + actualRadius * Math.cos(angle);
+                person.y = centerY + actualRadius * Math.sin(angle);
             }
         });
 
-        // Create degree boundary circles with MORE VISIBLE color
+        // Create degree boundary circles with theme-aware visibility
         container.append("g")
             .attr("class", "degree-boundaries")
             .selectAll("circle")
-            .data([220, 380, 540, 700]) // Updated radii
+            .data([400, 650, 900, 1200]) // Updated to match new radii
             .enter().append("circle")
             .attr("class", "degree-circles")
             .attr("cx", centerX)
             .attr("cy", centerY)
             .attr("r", d => d)
-            .style("stroke", "rgba(102, 126, 234, 0.3)") // More visible
-            .style("stroke-width", "2"); // Thicker lines
+            .style("stroke", function() {
+                return document.body.getAttribute('data-theme') === 'dark' 
+                    ? "rgba(148, 163, 184, 0.3)" 
+                    : "rgba(102, 126, 234, 0.2)"; // Lighter in light mode
+            })
+            .style("stroke-width", "2");
 
-        // Create force simulation
+        // Create force simulation with improved spacing and collision detection
         const simulation = d3.forceSimulation(people)
             .force("link", d3.forceLink(connections).id(d => d.id).distance(d => {
-                const strengthDistance = { strong: 80, medium: 120, weak: 160 };
-                return strengthDistance[d.strength] || 120;
-            }).strength(0.6))
+                const strengthDistance = { strong: 120, medium: 160, weak: 200 };
+                return strengthDistance[d.strength] || 160;
+            }).strength(0.4))
             .force("charge", d3.forceManyBody().strength(d => {
-                return d.degree === 0 ? -1000 : -300 - (d.size * 5);
+                // Stronger repulsion for better spacing
+                if (d.degree === 0) return -2000;
+                return -600 - (d.size * 10) - (minDistances[d.degree] * 5);
             }))
             .force("center", d3.forceCenter(centerX, centerY))
-            .force("collision", d3.forceCollide().radius(d => d.size + 10).strength(0.7))
-            .force("radial", d3.forceRadial(d => degreeRadii[d.degree], centerX, centerY).strength(0.3)); // Weaker radial force for more spread
+            .force("collision", d3.forceCollide().radius(d => {
+                // Dynamic collision radius based on degree
+                return d.size + minDistances[d.degree];
+            }).strength(0.9))
+            .force("radial", d3.forceRadial(d => degreeRadii[d.degree], centerX, centerY).strength(0.3));;
 
         // Create connection lines
         const link = container.append("g")
@@ -935,21 +1009,48 @@
             .style("stroke-dasharray", d => d.strength === "weak" ? "5,3" : "none")
             .style("stroke-linecap", "round");
 
-        // Create nodes - the bubbles ARE the interactive elements
-        const node = container.append("g")
-            .attr("class", "nodes")
-            .selectAll("circle")
+        // Create nodes - use groups for everyone (including Sarah) for consistency
+        const nodeContainer = container.append("g").attr("class", "nodes");
+        
+        const nodeGroups = nodeContainer
+            .selectAll("g")
             .data(people)
-            .enter().append("circle")
+            .enter().append("g")
+            .attr("class", d => d.degree === 0 ? "node-group target-person" : "node-group");
+
+        // Add the bubble circles to each group
+        const node = nodeGroups.append("circle")
             .attr("class", d => d.degree === 0 ? "node target-person" : "node")
             .attr("r", d => d.size)
             .style("fill", d => `url(#gradient-${d.id})`)
             .style("stroke", d => d.color)
             .style("stroke-width", d => d.degree === 0 ? 4 : 2)
             .style("filter", d => d.degree === 0 ? "drop-shadow(0 0 15px rgba(102, 126, 234, 0.6))" : "drop-shadow(0 4px 8px rgba(0,0,0,0.15))")
-            .style("cursor", "pointer")
+            .style("cursor", "pointer");
+
+        // Add text labels directly to each node group with theme-aware colors
+        nodeGroups.append("text")
+            .attr("dy", d => d.size + 18)
+            .attr("text-anchor", "middle")
+            .text(d => d.name)
+            .style("fill", "var(--text-primary)")
+            .style("font-size", d => d.degree === 0 ? "16px" : d.degree === 1 ? "14px" : "12px")
+            .style("font-weight", d => d.degree === 0 ? "700" : "600")
+            .style("filter", "drop-shadow(0 1px 3px rgba(0,0,0,0.5))")
+            .style("pointer-events", "none");
+
+        nodeGroups.append("text")
+            .attr("dy", d => d.size + 34)
+            .attr("text-anchor", "middle")
+            .text(d => d.title)
+            .style("fill", "var(--text-secondary)")
+            .style("font-size", d => d.degree === 0 ? "12px" : "10px")
+            .style("pointer-events", "none");
+
+        // Apply interactions to node groups - FIXED: Only draggable if degree !== 0
+        nodeGroups
             .call(d3.drag()
-                .filter(d => d.degree !== 0) // Only allow dragging non-main person
+                .filter(d => d.degree !== 0) // Only allow dragging non-Sarah people
                 .on("start", dragstarted)
                 .on("drag", dragged)
                 .on("end", dragended))
@@ -964,59 +1065,64 @@
                 }
             })
             .on("mouseover", function(event, d) {
+                event.stopPropagation();
                 if (currentMode === 'normal') {
-                    d3.select(this).classed("highlighted", true);
+                    d3.select(this).select(".node").classed("highlighted", true);
                     highlightConnections(d);
                 }
             })
             .on("mouseout", function(event, d) {
+                event.stopPropagation();
                 if (currentMode === 'normal') {
-                    d3.select(this).classed("highlighted", false);
+                    d3.select(this).select(".node").classed("highlighted", false);
                     resetLinkStyles();
                 }
             });
 
-        // Add text labels - separate from the interactive bubbles
-        const labels = container.append("g")
-            .attr("class", "labels")
-            .selectAll("g")
-            .data(people)
-            .enter().append("g")
-            .style("pointer-events", "none"); // Labels don't interfere with bubble clicks
-
-        // Add names
-        labels.append("text")
-            .attr("dy", d => d.size + 18)
-            .attr("text-anchor", "middle")
-            .text(d => d.name)
-            .style("fill", "#2d3748")
-            .style("font-size", d => d.degree === 0 ? "16px" : d.degree === 1 ? "14px" : "12px")
-            .style("font-weight", d => d.degree === 0 ? "700" : "600")
-            .style("filter", "drop-shadow(0 1px 2px rgba(255,255,255,0.8))");
-
-        // Add titles
-        labels.append("text")
-            .attr("dy", d => d.size + 34)
-            .attr("text-anchor", "middle")
-            .text(d => d.title)
-            .style("fill", "#718096")
-            .style("font-size", d => d.degree === 0 ? "12px" : "10px");
-
-        // Update positions - both bubbles and labels move together
+        // Update positions - all nodes move with simulation, Sarah stays pinned
         simulation.on("tick", () => {
+            // Ensure Sarah Chen stays fixed at center on every tick
+            const sarahChen = people.find(p => p.degree === 0);
+            if (sarahChen) {
+                sarahChen.x = centerX;
+                sarahChen.y = centerY;
+                sarahChen.fx = centerX; // Keep it fixed
+                sarahChen.fy = centerY;
+            }
+            
+            // Update links to connect to bubble edges instead of centers
             link
-                .attr("x1", d => d.source.x)
-                .attr("y1", d => d.source.y)
-                .attr("x2", d => d.target.x)
-                .attr("y2", d => d.target.y);
+                .attr("x1", d => {
+                    const dx = d.target.x - d.source.x;
+                    const dy = d.target.y - d.source.y;
+                    const distance = Math.sqrt(dx * dx + dy * dy);
+                    const sourceRadius = d.source.size || 30;
+                    return d.source.x + (dx / distance) * sourceRadius;
+                })
+                .attr("y1", d => {
+                    const dx = d.target.x - d.source.x;
+                    const dy = d.target.y - d.source.y;
+                    const distance = Math.sqrt(dx * dx + dy * dy);
+                    const sourceRadius = d.source.size || 30;
+                    return d.source.y + (dy / distance) * sourceRadius;
+                })
+                .attr("x2", d => {
+                    const dx = d.source.x - d.target.x;
+                    const dy = d.source.y - d.target.y;
+                    const distance = Math.sqrt(dx * dx + dy * dy);
+                    const targetRadius = d.target.size || 30;
+                    return d.target.x + (dx / distance) * targetRadius;
+                })
+                .attr("y2", d => {
+                    const dx = d.source.x - d.target.x;
+                    const dy = d.source.y - d.target.y;
+                    const distance = Math.sqrt(dx * dx + dy * dy);
+                    const targetRadius = d.target.size || 30;
+                    return d.target.y + (dy / distance) * targetRadius;
+                });
 
-            // Update bubble positions
-            node
-                .attr("cx", d => d.x)
-                .attr("cy", d => d.y);
-
-            // Update label positions
-            labels
+            // Update all node group positions
+            nodeGroups
                 .attr("transform", d => `translate(${d.x},${d.y})`);
         });
 
@@ -1041,6 +1147,18 @@
             });
         }
 
+        function toggleConnectionMode() {
+            if (currentMode === 'connection') {
+                closeConnectionMode();
+            } else {
+                currentMode = 'connection';
+                selectedPeople = [];
+                updateConnectionModeUI();
+                updateActionButtons();
+                clearHighlights();
+            }
+        }
+
         // Enhanced interaction functions
         function closeConnectionMode() {
             currentMode = 'normal';
@@ -1048,7 +1166,7 @@
             clearHighlights();
             updateActionButtons();
             updateConnectionModeUI();
-            node.classed("selected", false);
+            nodeGroups.select(".node").classed("selected", false);
         }
 
         function toggleInfluenceMode() {
@@ -1074,7 +1192,7 @@
             updateConnectionModeUI();
             
             // Reset all node and link styles
-            node.classed("selected highlighted", false);
+            nodeGroups.select(".node").classed("selected highlighted", false);
             resetLinkStyles();
         }
 
@@ -1164,7 +1282,7 @@
             link.classed("path-highlight", d => pathHighlights.includes(d));
             
             // Highlight path nodes
-            node.classed("highlighted", d => pathIds.includes(d.id));
+            nodeGroups.select(".node").classed("highlighted", d => pathIds.includes(d.id));
         }
 
         function displayPathInfo(pathIds) {
@@ -1208,8 +1326,7 @@
             });
             
             // Highlight influence sphere
-            node.style("opacity", d => influenceIds.has(d.id) ? 1 : 0.3);
-            labels.style("opacity", d => influenceIds.has(d.id) ? 1 : 0.3);
+            nodeGroups.style("opacity", d => influenceIds.has(d.id) ? 1 : 0.3);
             link.style("opacity", d => {
                 const sourceId = d.source.id || d.source;
                 const targetId = d.target.id || d.target;
@@ -1263,8 +1380,8 @@
             }
             
             link.classed("path-highlight", false);
-            node.style("opacity", 1).classed("highlighted", false);
-            labels.style("opacity", 1);
+            nodeGroups.style("opacity", 1);
+            nodeGroups.select(".node").classed("highlighted", false);
             link.style("opacity", d => {
                 if (d.strength === "strong") return 0.8;
                 if (d.strength === "medium") return 0.6;
@@ -1291,7 +1408,7 @@
         }
 
         function updateSelectedNodes() {
-            node.classed("selected", d => selectedPeople.find(p => p.id === d.id));
+            nodeGroups.select(".node").classed("selected", d => selectedPeople.find(p => p.id === d.id));
         }
 
         function updateActionButtons() {
@@ -1304,19 +1421,11 @@
             const searchTerm = e.target.value.toLowerCase();
             
             if (searchTerm.length === 0) {
-                node.style("opacity", 1);
-                labels.style("opacity", 1);
+                nodeGroups.style("opacity", 1);
                 return;
             }
             
-            node.style("opacity", d => {
-                const matches = d.name.toLowerCase().includes(searchTerm) || 
-                               d.company.toLowerCase().includes(searchTerm) ||
-                               d.title.toLowerCase().includes(searchTerm);
-                return matches ? 1 : 0.3;
-            });
-
-            labels.style("opacity", d => {
+            nodeGroups.style("opacity", d => {
                 const matches = d.name.toLowerCase().includes(searchTerm) || 
                                d.company.toLowerCase().includes(searchTerm) ||
                                d.title.toLowerCase().includes(searchTerm);
@@ -1324,22 +1433,22 @@
             });
         });
 
-        // Drag functions - only for non-main people
+        // Drag functions - FIXED: Completely prevent dragging for Sarah Chen (degree 0)
         function dragstarted(event, d) {
-            if (d.degree === 0) return; // Don't allow dragging main person
+            if (d.degree === 0) return; // Absolutely no dragging for center person
             if (!event.active) simulation.alphaTarget(0.3).restart();
             d.fx = d.x;
             d.fy = d.y;
         }
 
         function dragged(event, d) {
-            if (d.degree === 0) return; // Don't allow dragging main person
+            if (d.degree === 0) return; // Absolutely no dragging for center person
             d.fx = event.x;
             d.fy = event.y;
         }
 
         function dragended(event, d) {
-            if (d.degree === 0) return; // Don't allow dragging main person
+            if (d.degree === 0) return; // Absolutely no dragging for center person
             if (!event.active) simulation.alphaTarget(0);
             d.fx = null;
             d.fy = null;
@@ -1367,7 +1476,7 @@
         document.getElementById("industry-filter").addEventListener("change", function(e) {
             const selectedIndustry = e.target.value;
             
-            node.style("opacity", d => {
+            nodeGroups.style("opacity", d => {
                 return selectedIndustry === "all" || d.industry === selectedIndustry ? 1 : 0.3;
             });
             
@@ -1392,16 +1501,13 @@
             });
         });
 
-        // Zoom control
+        // Zoom control - Fixed to work properly without conflicts
         document.getElementById("zoom-control").addEventListener("input", function(e) {
             const scale = parseFloat(e.target.value);
-            svg.transition().duration(300).call(
-                d3.zoom().transform,
-                d3.zoomIdentity.scale(scale)
-            );
+            svg.call(zoomBehavior.transform, d3.zoomIdentity.scale(scale));
         });
 
-        // Theme toggle
+        // Theme toggle with proper circle updates
         function toggleTheme() {
             const body = document.body;
             const currentTheme = body.getAttribute('data-theme');
@@ -1410,6 +1516,18 @@
             
             const toggle = document.querySelector('.control-btn');
             toggle.textContent = newTheme === 'dark' ? '☀️ Light Mode' : '🌓 Dark Mode';
+            
+            // Update circle colors for new theme
+            container.selectAll('.degree-circles')
+                .style("stroke", newTheme === 'dark' 
+                    ? "rgba(148, 163, 184, 0.3)" 
+                    : "rgba(102, 126, 234, 0.2)"); // Lighter in light mode
+            
+            // Update text colors
+            nodeGroups.selectAll("text")
+                .style("fill", function(d, i) {
+                    return i === 0 ? "var(--text-primary)" : "var(--text-secondary)";
+                });
             
             localStorage.setItem('theme', newTheme);
         }
@@ -1441,17 +1559,74 @@
             location.reload();
         }
 
+        // Enhanced demo popup with multi-step tutorial
+        function showResearchInsights() {
+            const demoText = document.getElementById("demo-text");
+            const demoTitle = document.querySelector(".demo-title");
+            const demoButtons = document.querySelector(".demo-buttons");
+            
+            demoTitle.innerHTML = "🎯 Research Insights & Navigation";
+            demoText.innerHTML = `
+                <strong>Explore Your Connection Path:</strong><br><br>
+                
+                • <strong>Center bubble</strong> represents your target person (Sarah Chen in this demo)<br>
+                • <strong>Surrounding bubbles</strong> show people in YOUR network who connect to them<br>
+                • <strong>Drag bubbles</strong> to explore relationships and reorganize the view<br>
+                • <strong>Connection Path Finder</strong> - discover the exact path from you to them<br>
+                • <strong>Influence Sphere</strong> - see who has the most network reach<br>
+                • <strong>Industry filters</strong> - focus on specific professional circles<br><br>
+                
+                <span style="color: #667eea; font-weight: 600;">
+                    💡 Pro Tip: Look for the shortest connection path or strongest mutual connections to plan your outreach strategy!
+                </span>
+            `;
+            
+            demoButtons.innerHTML = `
+                <button class="demo-close demo-primary" onclick="closeDemoNotice()">Start Exploring →</button>
+            `;
+        }
+
         function closeDemoNotice() {
             document.getElementById("demo-notice").classList.add("hidden");
         }
 
         function showHelp() {
-            document.getElementById("demo-notice").classList.remove("hidden");
+            const notice = document.getElementById("demo-notice");
+            const demoText = document.getElementById("demo-text");
+            const demoTitle = document.querySelector(".demo-title");
+            const demoButtons = document.querySelector(".demo-buttons");
+            
+            // Reset to first screen
+            demoTitle.innerHTML = "🔍 ConnectMap - Find Your Connection Path";
+            demoText.innerHTML = `
+                <strong>How ConnectMap Works:</strong><br><br>
+                
+                Want to know how you're connected to someone? Simply provide their LinkedIn, X/Twitter, Facebook, or Instagram profile and ConnectMap will analyze your existing network to discover:<br><br>
+                
+                • <strong>Your connection path</strong> to that person (through mutual friends, colleagues, etc.)<br>
+                • <strong>Shared connections</strong> who could introduce you<br>
+                • <strong>Network overlap</strong> and common contacts<br>
+                • <strong>Shortest path</strong> to reach them through your network<br>
+                • <strong>Influence mapping</strong> to identify key connectors<br><br>
+                
+                The app uses your existing social network data to map the relationship degrees between you and your target person.<br><br>
+                
+                <span style="color: var(--text-secondary); font-size: 12px;">
+                    ⚡ Demo Mode: This shows how you might be connected to Sarah Chen through your network.
+                </span>
+            `;
+            
+            demoButtons.innerHTML = `
+                <button class="demo-close demo-primary" onclick="showResearchInsights()">How to Use →</button>
+                <button class="demo-close demo-secondary" onclick="closeDemoNotice()">Skip Tutorial</button>
+            `;
+            
+            notice.classList.remove("hidden");
         }
 
         // Close info panel when clicking elsewhere  
         document.addEventListener("click", function(e) {
-            if (!e.target.closest(".info-panel") && !e.target.closest(".node")) {
+            if (!e.target.closest(".info-panel") && !e.target.closest(".node-group") && !e.target.classList.contains('node')) {
                 document.getElementById("info-panel").classList.remove("active");
             }
         });
